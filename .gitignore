@@ -25,6 +25,8 @@ Build/Targets/x86-microsoft-win32-vs2015/**/*.sdf
 Build/Targets/universal-apple-macosx/build
 Build/Targets/universal-apple-macosx/Bento4.xcodeproj/xcuserdata
 Build/Targets/universal-apple-macosx/Bento4.xcodeproj/project.xcworkspace/xcuserdata
+Build/**/Release
+Build/**/*.opendb
 .svn
 .sconsign.dblite
 Bento4.xccheckout

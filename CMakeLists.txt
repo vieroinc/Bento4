@@ -50,3 +50,5 @@ foreach(app ${BENTO4_APPS})
   add_executable(${binary_name} ${SOURCE_ROOT}/Apps/${app}/${app}.cpp)
   target_link_libraries(${binary_name} ap4)
 endforeach()
+
+target_link_libraries(mp4encryptmdat pthread)

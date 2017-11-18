@@ -47,35 +47,6 @@
 #include "Ap4DataBuffer.h"
 #include "Ap4Debug.h"
 
-/*----------------------------------------------------------------------
-|   types
-+---------------------------------------------------------------------*/
-struct AP4_SampleLocator {
-    AP4_SampleLocator() : 
-        m_TrakIndex(0), 
-        m_SampleTable(NULL), 
-        m_SampleIndex(0), 
-        m_ChunkIndex(0) {}
-    AP4_Ordinal          m_TrakIndex;
-    AP4_AtomSampleTable* m_SampleTable;
-    AP4_Ordinal          m_SampleIndex;
-    AP4_Ordinal          m_ChunkIndex;
-    AP4_Sample           m_Sample;
-};
-
-struct AP4_SampleCursor {
-    AP4_SampleCursor() : m_EndReached(false) {}
-    AP4_SampleLocator m_Locator;
-    bool              m_EndReached;
-};
-
-struct AP4_AtomLocator {
-    AP4_AtomLocator(AP4_Atom* atom, AP4_UI64 offset) : 
-        m_Atom(atom),
-        m_Offset(offset) {}
-    AP4_Atom* m_Atom;
-    AP4_UI64  m_Offset;
-};
 
 /*----------------------------------------------------------------------
 |   AP4_DefaultFragmentHandler

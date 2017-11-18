@@ -179,7 +179,6 @@ AP4_AtomFactory::CreateAtomFromStream(AP4_ByteStream& stream,
         return result;
     }
     AP4_UI64 size = size_32;
-
     // read atom type
     AP4_Atom::Type type;
     result = stream.ReadUI32(type);

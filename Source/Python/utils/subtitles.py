@@ -21,6 +21,7 @@ class SubtitlesFile:
 
         self.size = os.path.getsize(filename)
 
+        self.role = media_source.spec.get("+role")
         self.language = media_source.spec.get('+language')
         self.language_name = 'Unknown'
         if not self.language:

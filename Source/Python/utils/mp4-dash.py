@@ -13,6 +13,7 @@ __copyright__ = 'Copyright 2011-2016 Axiomatic Systems, LLC.'
 # Linux x86 --> platform = linux-x86
 # Windows   --> platform = win32
 
+import platform
 from optparse import OptionParser
 import shutil
 import xml.etree.ElementTree as xml
@@ -40,7 +41,7 @@ MPD_NS_COMPAT               = 'urn:mpeg:DASH:schema:MPD:2011'
 MPD_NS                      = 'urn:mpeg:dash:schema:mpd:2011'
 SPLIT_INIT_SEGMENT_NAME     = 'init.mp4'
 NOSPLIT_INIT_FILE_PATTERN   = 'init-%s.mp4'
-ONDEMAND_MEDIA_FILE_PATTERN = '%s-%s.mp4'
+ONDEMAND_MEDIA_FILE_PATTERN = '%s.%s.mp4'
 
 PADDED_SEGMENT_PATTERN      = 'seg-%04llu.m4s'
 PADDED_SEGMENT_URL_PATTERN  = 'seg-%04d.m4s'
@@ -53,6 +54,8 @@ SEGMENT_URL_PATTERN         = NOPAD_SEGMENT_URL_PATTERN
 SEGMENT_URL_TEMPLATE        = NOPAD_SEGMENT_URL_TEMPLATE
 
 MEDIA_FILE_PATTERN          = '%s-%02d.mp4'
+
+CLEARKEY_SCHEME_ID_URI      = 'urn:uuid:e2719d58-a985-b3c9-781a-b030af78d30e'
 
 MARLIN_SCHEME_ID_URI        = 'urn:uuid:5E629AF5-38DA-4063-8977-97FFBD9902D4'
 MARLIN_MAS_NAMESPACE        = 'urn:marlin:mas:1-0:services:schemas:mpd'
@@ -79,6 +82,7 @@ SMOOTH_DEFAULT_TIMESCALE    = 10000000
 SMIL_NAMESPACE              = 'http://www.w3.org/2001/SMIL20/Language'
 
 CENC_2013_NAMESPACE         = 'urn:mpeg:cenc:2013'
+CLEARKEY_NAMESPACE          = 'urn:mpeg:clearkey'
 
 DASH_DEFAULT_ROLE_NAMESPACE = 'urn:mpeg:dash:role:2011'
 
@@ -113,6 +117,21 @@ MpegCencSchemeMap = {
     'cens': 'MPEG-CENS',
     'cbcs': 'MPEG-CBCS'
 }
+
+SourceNameMap = {}
+
+def filenameForTrack(track):
+    key = track.parent.media_source.name
+    if key in SourceNameMap:
+        return SourceNameMap[key]
+    else:
+        if "Windows" == platform.system():
+            return track.parent.media_source.filename.split("\\")[-1]
+        else:
+            return track.parent.media_source.filename.split("/")[-1]
+
+def variantForName(name):
+    return name.replace("_dashinit.mp4", "")
 
 #############################################
 def AddSegmentList(options, container, subdir, track, use_byte_range=False):
@@ -284,6 +303,14 @@ def AddContentProtection(options, container, tracks):
             pssh = xml.SubElement(cp, '{' + CENC_2013_NAMESPACE + '}pssh')
             pssh.text = pssh_b64
 
+    if options.clearkey:
+        container.append(xml.Comment(' ClearKey '))
+        xml.register_namespace('clearkey', CLEARKEY_NAMESPACE)
+        cp = xml.SubElement(container, 'ContentProtection', schemeIdUri=CLEARKEY_SCHEME_ID_URI, value='ClearKey1.0')
+        if options.clearkey_laurl:
+            clearkey = xml.SubElement(cp, '{' + CLEARKEY_NAMESPACE + '}Laurl', Lic_type='EME-1.0')
+            clearkey.text = options.clearkey_laurl
+
     # Primetime
     if options.primetime:
         container.append(xml.Comment(' Primetime '))
@@ -418,7 +445,9 @@ def OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, 
 
                 if options.on_demand:
                     base_url = xml.SubElement(representation, 'BaseURL')
-                    base_url.text = ONDEMAND_MEDIA_FILE_PATTERN % (options.media_prefix, video_track.representation_id)
+                    
+                    fileName = filenameForTrack(video_track)
+                    base_url.text = fileName
                     sidx_range = (video_track.sidx_atom.position, video_track.sidx_atom.position+video_track.sidx_atom.size-1)
                     init_range = (0, video_track.moov_atom.position+video_track.moov_atom.size-1)
                     segment_base = xml.SubElement(representation, 'SegmentBase', indexRange=str(sidx_range[0])+'-'+str(sidx_range[1]))
@@ -433,9 +462,13 @@ def OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, 
             args = [period, 'AdaptationSet']
             kwargs = {'mimeType': AUDIO_MIMETYPE, 'startWithSAP': '1', 'segmentAlignment': 'true'}
             language = audio_tracks[0].language
+            role = audio_tracks[0].role
             if (language != 'und') or options.always_output_lang:
                 kwargs['lang'] = language
             adaptation_set = xml.SubElement(*args, **kwargs)
+
+            print(role)
+            xml.SubElement(adaptation_set, 'Role', schemeIdUri='urn:mpeg:dash:role:2011', value=role)
 
             # see if we have descriptors
             AddDescriptor(adaptation_set, set_attributes, 'audio/' + language, 'audio')
@@ -481,7 +514,8 @@ def OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, 
 
                 if options.on_demand:
                     base_url = xml.SubElement(representation, 'BaseURL')
-                    base_url.text = ONDEMAND_MEDIA_FILE_PATTERN % (options.media_prefix, audio_track.representation_id)
+                    fileName = filenameForTrack(audio_track)
+                    base_url.text = fileName
                     sidx_range = (audio_track.sidx_atom.position, audio_track.sidx_atom.position+audio_track.sidx_atom.size-1)
                     init_range = (0, audio_track.moov_atom.position+audio_track.moov_atom.size-1)
                     segment_base = xml.SubElement(representation, 'SegmentBase', indexRange=str(sidx_range[0])+'-'+str(sidx_range[1]))
@@ -501,7 +535,7 @@ def OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, 
                 adaptation_set = xml.SubElement(*args, **kwargs)
 
                 # add a 'subtitles' role
-                xml.SubElement(adaptation_set, 'Role', schemeIdUri='urn:mpeg:dash:role:2011', value='subtitle')
+                xml.SubElement(adaptation_set, 'Role', schemeIdUri='urn:mpeg:dash:role:2011', value=subtitles_track.role)
 
                 # see if we have other descriptors
                 AddDescriptor(adaptation_set, set_attributes, 'subtitles/' + subtitles_track.language, 'subtitles')
@@ -514,7 +548,8 @@ def OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, 
 
                 if options.on_demand:
                     base_url = xml.SubElement(representation, 'BaseURL')
-                    base_url.text = ONDEMAND_MEDIA_FILE_PATTERN % (options.media_prefix, subtitles_track.representation_id)
+                    fileName = filenameForTrack(subtitles_track)
+                    base_url.text = fileName
                     sidx_range = (subtitles_track.sidx_atom.position, subtitles_track.sidx_atom.position+subtitles_track.sidx_atom.size-1)
                     init_range = (0, subtitles_track.moov_atom.position+subtitles_track.moov_atom.size-1)
                     segment_base = xml.SubElement(representation, 'SegmentBase', indexRange=str(sidx_range[0])+'-'+str(sidx_range[1]))
@@ -534,6 +569,7 @@ def OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, 
     # process all the subtitles files
     if len(subtitles_files):
         period.append(xml.Comment(' Subtitles (Sidecar) '))
+        i = 0
         for subtitles_file in subtitles_files:
             args = [period, 'AdaptationSet']
             kwargs = {
@@ -545,7 +581,7 @@ def OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, 
             adaptation_set = xml.SubElement(*args, **kwargs)
 
             # add a 'subtitles' role
-            xml.SubElement(adaptation_set, 'Role', schemeIdUri='urn:mpeg:dash:role:2011', value='subtitle')
+            xml.SubElement(adaptation_set, 'Role', schemeIdUri='urn:mpeg:dash:role:2011', value=subtitles_file.role)
 
             # see if we have other descriptors
             AddDescriptor(adaptation_set, set_attributes, 'subtitles/' + subtitles_file.language, 'subtitles')
@@ -557,10 +593,11 @@ def OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, 
 
             representation = xml.SubElement(adaptation_set,
                                             'Representation',
-                                            id='subtitles/'+subtitles_file.language,
+                                            id='subtitles/'+subtitles_file.language + "/" + str(i),
                                             bandwidth=str(bandwidth))
+            i += 1
             base_url = xml.SubElement(representation, 'BaseURL')
-            base_url.text = 'subtitles/'+subtitles_file.language+'/'+subtitles_file.media_name
+            base_url.text = subtitles_file.media_name
 
     # save the MPD
     if options.mpd_filename:
@@ -586,10 +623,20 @@ def ComputeHlsWidevineKeyLine(options, track):
     if 'kid' not in fields:
         fields['kid'] = track.key_info['kid']
 
+    pssh_payload = ComputeWidevineHeader(options.widevine_header, fields['kid'])
+    pssh_box = MakePsshBox(WIDEVINE_PSSH_SYSTEM_ID.decode('hex'), pssh_payload)
+    pssh_b64 = pssh_box.encode('base64').replace('\n', '')
+
     json_param = '{ "provider": "%(provider)s", "content_id": "%(content_id)s", "key_ids": ["%(kid)s"] }' % fields
-    key_line   = 'URI="data:text/plain;base64,'+json_param.encode('base64').replace('\n','')+'",KEYFORMAT="com.widevine",KEYFORMATVERSIONS="1",IV=0x'+track.key_info['iv']
+    key_line   = 'URI="data:text/plain;base64,'+ pssh_b64 +'",KEYFORMAT="' + WIDEVINE_SCHEME_ID_URI + '",KEYFORMATVERSIONS="1",IV=0x'+track.key_info['iv']
 
     return key_line
+
+def ComputeHlsClearKeyKeyLine(options, track):
+    if options.clearkey_laurl:
+        return 'URI="' + options.clearkey_laurl + '/hls",IV=0x'+track.key_info['iv']
+    else:
+        return 'URI="data:text/plain;base64,' + track.key_info['key'].encode('base64').replace('\n', '')
 
 #############################################
 def ComputeHlsFairplayKeyLine(options):
@@ -603,7 +650,7 @@ def OutputHlsCommon(options, track, media_subdir, playlist_name, media_file_name
     playlist_file.write('#EXTM3U\r\n')
     playlist_file.write('# Created with Bento4 mp4-dash.py, VERSION=' + VERSION + '-' + SDK_REVISION+'\r\n')
     playlist_file.write('#\r\n')
-    playlist_file.write('#EXT-X-VERSION:6\r\n')
+    playlist_file.write('#EXT-X-VERSION:7\r\n')
     playlist_file.write('#EXT-X-PLAYLIST-TYPE:VOD\r\n')
     playlist_file.write('#EXT-X-INDEPENDENT-SEGMENTS\r\n')
     playlist_file.write('#EXT-X-TARGETDURATION:%d\r\n' % (hls_target_duration))
@@ -619,13 +666,15 @@ def OutputHlsCommon(options, track, media_subdir, playlist_name, media_file_name
         if options.fairplay_key_uri:
             key_lines.append(ComputeHlsFairplayKeyLine(options))
         if options.widevine_header:
-            key_lines.append(ComputeHlsWidevineKeyLine(options, track))
-
-        if len(key_lines) == 0:
+            key_lines.append(ComputeHlsWidevineKeyLine(options, track))    
+        if options.hls_key_url:
             key_lines.append('URI="'+options.hls_key_url+'",IV=0x'+track.key_info['iv'])
 
         for key_line in key_lines:
-            playlist_file.write('#EXT-X-KEY:METHOD=SAMPLE-AES,'+key_line+'\r\n')
+            if options.encryption_cenc_scheme == "cbcs":
+                playlist_file.write('#EXT-X-KEY:METHOD=SAMPLE-AES,'+key_line+'\r\n')
+            elif options.encryption_cenc_scheme == "cenc":
+                playlist_file.write('#EXT-X-KEY:METHOD=SAMPLE-AES,'+key_line+'\r\n')
 
     return playlist_file
 
@@ -701,7 +750,7 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
     master_playlist_file.write('#EXTM3U\r\n')
     master_playlist_file.write('# Created with Bento4 mp4-dash.py, VERSION=' + VERSION + '-' + SDK_REVISION+'\r\n')
     master_playlist_file.write('#\r\n')
-    master_playlist_file.write('#EXT-X-VERSION:6\r\n')
+    master_playlist_file.write('#EXT-X-VERSION:7\r\n')
     master_playlist_file.write('\r\n')
     master_playlist_file.write('# Media Playlists\r\n')
 
@@ -711,8 +760,11 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
     for adaptation_set_name, audio_tracks in audio_sets.items():
         language = audio_tracks[0].language.decode('utf-8')
         language_name = LanguageNames.get(language, language).decode('utf-8')
+        if "und" == language:
+            language = "en"
+            language_name = "English"
 
-        audio_group_name = adaptation_set_name[0]+'/'+adaptation_set_name[2]
+        audio_group_name = adaptation_set_name[0]+'/'+adaptation_set_name[2] + '/' + adaptation_set_name[3]
         audio_groups[audio_group_name] = {
             'codec': '',
             'average_segment_bitrate': 0,
@@ -732,10 +784,12 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
                 if audio_groups[audio_group_name]['codec'] != audio_track.codec:
                     print 'WARNING: audio codecs not all the same:', audio_groups[audio_group_name]['codec'], audio_track.codec
 
+            fileName = filenameForTrack(audio_track)
+            variantName = variantForName(fileName)
             if options.on_demand or not options.split:
                 media_subdir        = ''
-                media_file_name     = audio_track.parent.media_name
-                media_playlist_name = audio_track.representation_id+".m3u8"
+                media_file_name     = fileName
+                media_playlist_name = variantName+".m3u8"
                 media_playlist_path = media_playlist_name
             else:
                 media_subdir        = audio_track.representation_id
@@ -754,12 +808,14 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
     master_playlist_file.write('# Video\r\n')
     iframe_playlist_lines = []
     for video_track in all_video_tracks:
+        fileName = filenameForTrack(video_track)
+        variantName = variantForName(fileName)
         if options.on_demand or not options.split:
             media_subdir          = ''
-            media_file_name       = video_track.parent.media_name
-            media_playlist_name   = video_track.representation_id+".m3u8"
+            media_file_name       = fileName
+            media_playlist_name   = variantName+".m3u8"
             media_playlist_path   = media_playlist_name
-            iframes_playlist_name = video_track.representation_id+"_iframes.m3u8"
+            iframes_playlist_name = variantName+"_iframes.m3u8"
         else:
             media_subdir          = video_track.representation_id
             media_file_name       = ''
@@ -771,13 +827,14 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
             # one entry per audio group
             for audio_group_name in audio_groups:
                 audio_codec = audio_groups[audio_group_name]['codec']
-                master_playlist_file.write('#EXT-X-STREAM-INF:AUDIO="%s",AVERAGE-BANDWIDTH=%d,BANDWIDTH=%d,CODECS="%s",RESOLUTION=%dx%d\r\n' % (
+                master_playlist_file.write('#EXT-X-STREAM-INF:AUDIO="%s",AVERAGE-BANDWIDTH=%d,BANDWIDTH=%d,CODECS="%s",RESOLUTION=%dx%d%s\r\n' % (
                                            audio_group_name,
                                            video_track.average_segment_bitrate + audio_groups[audio_group_name]['average_segment_bitrate'],
                                            video_track.max_segment_bitrate + audio_groups[audio_group_name]['max_segment_bitrate'],
                                            video_track.codec+','+audio_codec,
                                            video_track.width,
-                                           video_track.height))
+                                           video_track.height,
+                                           ',SUBTITLES="subs"' if len(subtitles_files) > 0 else ''))
                 master_playlist_file.write(media_playlist_path+'\r\n')
         else:
             # no audio
@@ -799,7 +856,7 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
                                      video_track.codec,
                                      video_track.width,
                                      video_track.height,
-                                     media_playlist_path))
+                                     iframes_playlist_name))
 
     master_playlist_file.write('\r\n# I-Frame Playlists\r\n')
     master_playlist_file.write(''.join(iframe_playlist_lines))
@@ -832,8 +889,9 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
     if len(subtitles_files):
         master_playlist_file.write('\r\n# Subtitles (WebVTT)\r\n')
         for subtitles_file in subtitles_files:
-            master_playlist_file.write('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="{0:s}",DEFAULT=NO,AUTOSELECT=YES,FORCED=YES,LANGUAGE="{0:s}",URI="subtitles/{0:s}/{1:s}"\r\n'
-                                       .format(subtitles_file.language,subtitles_file.media_name))
+            fileName = subtitles_file.media_name.split(".vtt")[0] + ".m3u8"
+            master_playlist_file.write('''#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="{0:s}",DEFAULT=YES,AUTOSELECT=YES,FORCED={2:s},LANGUAGE="{0:s}",URI="{1:s}"\r\n'''.format(
+                subtitles_file.language, fileName, "YES" if subtitles_file.role == "forced" else "NO" ))
 
 #############################################
 def OutputSmooth(options, audio_tracks, video_tracks):
@@ -1070,14 +1128,7 @@ def SelectTracks(options, media_sources):
         # set some metadata properties for this file
         mp4_file.file_list_index = file_list_index
         file_list_index += 1
-        if options.rename_media:
-            mp4_file.media_name = MEDIA_FILE_PATTERN % (options.media_prefix, mp4_file.file_list_index)
-        elif '+media' in media_source.spec:
-            mp4_file.media_name = media_source.spec['+media']
-        elif 'media' in media_source.spec: # we still accept the form without the '+' sign, for legacy support
-            mp4_file.media_name = media_source.spec['media']
-        else:
-            mp4_file.media_name = path.basename(media_source.original_filename)
+        mp4_file.media_name = path.basename(media_source.original_filename)
 
         if not options.split:
             if mp4_file.media_name in mp4_media_names:
@@ -1100,7 +1151,9 @@ def SelectTracks(options, media_sources):
     for media_source in media_sources:
         track_id       = media_source.spec['track']
         track_type     = media_source.spec['type']
+        track_group    = media_source.spec['group']
         track_language = media_source.spec['language']
+        track_role     = media_source.spec['role']
         tracks         = []
 
         if media_source.format != 'mp4':
@@ -1108,6 +1161,9 @@ def SelectTracks(options, media_sources):
                 PrintErrorAndExit('ERROR: track ID and track type selections only apply to MP4 media sources')
 
             continue
+
+        if not track_group or track_group == "undefined":
+            track_group = "0"
 
         if track_type not in ['', 'audio', 'video', 'subtitles']:
             sys.stderr.write('WARNING: ignoring source '+media_source.name+', unknown type')
@@ -1120,6 +1176,9 @@ def SelectTracks(options, media_sources):
             if not tracks:
                 PrintErrorAndExit('ERROR: track id not found for media file '+media_source.name)
 
+        if not track_role or track_role == "undefined":
+            track_role = "main"
+            
         if track_type:
             tracks = media_source.mp4_file.find_tracks_by_type(track_type)
             if not tracks:
@@ -1140,6 +1199,7 @@ def SelectTracks(options, media_sources):
             elif options.language_map and language in options.language_map:
                 language = options.language_map[language]
             track.language = language
+            track.role = track_role
 
             # video scan type
             if track.type == 'video':
@@ -1147,7 +1207,7 @@ def SelectTracks(options, media_sources):
 
         # process audio tracks
         for track in [t for t in tracks if t.type == 'audio']:
-            adaptation_set_name = ('audio', track.language, track.codec_family)
+            adaptation_set_name = ('audio', track.language, track.codec_family, track_group)
             adaptation_set = audio_adaptation_sets.get(adaptation_set_name, [])
             audio_adaptation_sets[adaptation_set_name] = adaptation_set
 
@@ -1358,6 +1418,10 @@ def main():
                       help="Do not store the PlayReady header in a 'pssh' box in the init segment(s)")
     parser.add_option('', "--widevine", dest="widevine", action="store_true", default=False,
                       help="Add Widevine signaling to the MPD (requires an encrypted input, or the --encryption-key option)")
+    parser.add_option('', "--clearkey", dest="clearkey", action="store_true", default=False,
+                      help="Add ClearKey signaling to the MPD (requires an encrypted input, or the --encryption-key option)")
+    parser.add_option('', "--clearkey-laurl", dest="clearkey_laurl", default=False,
+                      help="Add ClearKey signaling to the MPD (requires an encrypted input, or the --encryption-key option)")
     parser.add_option('', "--widevine-header", dest="widevine_header", metavar='<widevine-header>', default=None,
                       help="Add a Widevine entry in the MPD, and a Widevine PSSH box in the init segments. The use of this option implies the --widevine option. " +
                            "The <widevine-header> argument can be either: " +
@@ -1468,16 +1532,19 @@ def main():
         if options.hls and options.widevine_header.startswith('#'):
             raise Exception('with --hls, only the <name>:<value> pair syntax is supported for the --widevine-header option')
 
+    if options.clearkey_laurl:
+        options.clearkey = True
+
     if options.primetime_metadata:
         options.primetime = True
 
     if options.fairplay_key_uri:
         if not options.hls:
             sys.stderr.write('WARNING: --fairplay-key-uri is only valid with --hls, ignoring\n')
-
-    if options.hls:
-        if options.encryption_key and options.encryption_cenc_scheme != 'cbcs':
-            raise Exception('--hls requires --encryption-cenc-scheme=cbcs')
+            
+    # if options.hls:
+        # if options.encryption_key and options.encryption_cenc_scheme != 'cbcs':
+          #  raise Exception('--hls requires --encryption-cenc-scheme=cbcs')
 
     # compute the KID(s) and encryption key(s) if needed
     if options.encryption_key:
@@ -1520,26 +1587,28 @@ def main():
     MakeNewDir(dir=options.output_dir, exit_if_exists = not (options.no_media or options.force_output), severity=severity)
 
     # for on-demand, we need to first extract tracks into individual media files
-    if options.on_demand:
-        (audio_sets, video_sets, subtitles_sets, mp4_files) = SelectTracks(options, media_sources)
-        media_sources = filter(lambda x: x.format == "webvtt", media_sources) #Keep subtitles
-        for track in sum(audio_sets.values()+video_sets.values(), []):
-            print 'Extracting track', track.id, 'from', GetMappedFileName(track.parent.media_source.filename)
-            track_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
-            TempFiles.append(track_file.name)
-            track_file.close() # necessary on Windows
-            MapFileName(track_file.name, path.basename(track_file.name) + ' = Extracted[track '+str(track.id) + ' from '+GetMappedFileName(track.parent.media_source.filename)+']')
+    # if options.on_demand:
+    #     (audio_sets, video_sets, subtitles_sets, mp4_files) = SelectTracks(options, media_sources)
+    #     media_sources = filter(lambda x: x.format == "webvtt", media_sources) #Keep subtitles
+    #     tracks = sum(audio_sets.values()+video_sets.values(), [])
+    #     for track in sum(audio_sets.values()+video_sets.values(), []):
+    #         print 'Extracting track', track.id, 'from', GetMappedFileName(track.parent.media_source.filename)
+    #         track_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
+    #         TempFiles.append(track_file.name)
+    #         track_file.close() # necessary on Windows
+    #         MapFileName(track_file.name, path.basename(track_file.name) + ' = Extracted[track '+str(track.id) + ' from '+GetMappedFileName(track.parent.media_source.filename)+']')
+    #         origName = str(track.parent.media_source).split("/")[-1]
+    #         SourceNameMap[track_file.name] = origName
+    #         Mp4Fragment(options,
+    #                     track.parent.media_source.filename,
+    #                     track_file.name,
+    #                     track = str(track.id),
+    #                     index = True,
+    #                     quiet = True)
 
-            Mp4Fragment(options,
-                        track.parent.media_source.filename,
-                        track_file.name,
-                        track = str(track.id),
-                        index = True,
-                        quiet = True)
-
-            media_source = MediaSource(track_file.name)
-            media_source.spec = track.parent.media_source.spec
-            media_sources.append(media_source)
+    #         media_source = MediaSource(track_file.name)
+    #         media_source.spec = track.parent.media_source.spec
+    #         media_sources.append(media_source)
 
     # encrypt the input files if needed
     if options.encryption_key:
@@ -1582,72 +1651,76 @@ def main():
                 continue
 
             print 'Encrypting track IDs '+str(sorted(media_source.track_key_infos.keys()))+' in '+ GetMappedFileName(media_file)
-            encrypted_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
-            encrypted_files[media_file] = encrypted_file
-            TempFiles.append(encrypted_file.name)
-            encrypted_file.close() # necessary on Windows
-            MapFileName(encrypted_file.name, path.basename(encrypted_file.name) + ' = Encrypted[' + GetMappedFileName(media_file) + ']')
-            args = ['--method', MpegCencSchemeMap[options.encryption_cenc_scheme]]
+            #encrypted_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
+            #encrypted_files[media_file] = encrypted_file
+            #TempFiles.append(encrypted_file.name)
+            #encrypted_file.close() # necessary on Windows
 
-            if options.encryption_args:
-                args += options.encryption_args.split()
-            else:
-                if options.smooth or options.playready:
-                    args += ['--global-option', 'mpeg-cenc.piff-compatible:true']
+            #MapFileName(encrypted_file.name, path.basename(encrypted_file.name) + ' = Encrypted[' + GetMappedFileName(media_file) + ']')
+            #args = ['--method', MpegCencSchemeMap[options.encryption_cenc_scheme]]
+
+            #if options.encryption_args:
+            #    args += options.encryption_args.split()
+            #else:
+            #    if options.smooth or options.playready:
+            #        args += ['--global-option', 'mpeg-cenc.piff-compatible:true']
 
             for track_id in sorted(media_source.track_key_infos.keys()):
                 key_info = media_source.track_key_infos[track_id]
-                args += ['--key', str(track_id)+':'+key_info['key']+':'+key_info['iv'], '--property', str(track_id)+':KID:'+key_info['kid']]
+                # args += ['--key', str(track_id)+':'+key_info['key']+':'+key_info['iv'], '--property', str(track_id)+':KID:'+key_info['kid']]
 
             # EME Common Encryption / Clearkey
-            if options.eme_signaling == 'pssh-v0':
-                args += ['--pssh', EME_COMMON_ENCRYPTION_PSSH_SYSTEM_ID+':']
-            elif options.eme_signaling == 'pssh-v1':
-                args += ['--pssh-v1', EME_COMMON_ENCRYPTION_PSSH_SYSTEM_ID+':']
+            # if options.eme_signaling == 'pssh-v0':
+            #     args += ['--pssh', EME_COMMON_ENCRYPTION_PSSH_SYSTEM_ID+':']
+            # elif options.eme_signaling == 'pssh-v1':
+            #     args += ['--pssh-v1', EME_COMMON_ENCRYPTION_PSSH_SYSTEM_ID+':']
 
             # Marlin
-            if options.marlin_add_pssh:
-                marlin_pssh = ComputeMarlinPssh(options)
-                pssh_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
-                pssh_file.write(marlin_pssh)
-                TempFiles.append(pssh_file.name)
-                pssh_file.close() # necessary on Windows
-                args += ['--pssh', MARLIN_PSSH_SYSTEM_ID+':'+pssh_file.name]
+            # if options.marlin_add_pssh:
+            #     marlin_pssh = ComputeMarlinPssh(options)
+            #     pssh_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
+            #     pssh_file.write(marlin_pssh)
+            #     TempFiles.append(pssh_file.name)
+            #     pssh_file.close() # necessary on Windows
+            #     args += ['--pssh', MARLIN_PSSH_SYSTEM_ID+':'+pssh_file.name]
 
             # PlayReady
-            if options.playready_add_pssh:
-                playready_header = ComputePlayReadyHeader(options.playready_header, default_kid, default_key)
-                pssh_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
-                pssh_file.write(playready_header)
-                TempFiles.append(pssh_file.name)
-                pssh_file.close() # necessary on Windows
-                args += ['--pssh', PLAYREADY_PSSH_SYSTEM_ID+':'+pssh_file.name]
+            # if options.playready_add_pssh:
+            #     playready_header = ComputePlayReadyHeader(options.playready_header, default_kid, default_key)
+            #     pssh_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
+            #     pssh_file.write(playready_header)
+            #     TempFiles.append(pssh_file.name)
+            #     pssh_file.close() # necessary on Windows
+            #     args += ['--pssh', PLAYREADY_PSSH_SYSTEM_ID+':'+pssh_file.name]
 
             # Widevine
-            if options.widevine_header:
-                widevine_header = ComputeWidevineHeader(options.widevine_header, default_kid)
-                pssh_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
-                pssh_file.write(widevine_header)
-                TempFiles.append(pssh_file.name)
-                pssh_file.close() # necessary on Windows
-                args += ['--pssh', WIDEVINE_PSSH_SYSTEM_ID+':'+pssh_file.name]
+            # if options.widevine_header:
+            #     widevine_header = ComputeWidevineHeader(options.widevine_header, default_kid)
+            #     pssh_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
+            #     pssh_file.write(widevine_header)
+            #     TempFiles.append(pssh_file.name)
+            #     pssh_file.close() # necessary on Windows
+            #     args += ['--pssh', WIDEVINE_PSSH_SYSTEM_ID+':'+pssh_file.name]
 
             # Primetime
-            if options.primetime_metadata:
-                primetime_metadata = ComputePrimetimeMetaData(options.primetime_metadata, default_kid)
-                pssh_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
-                pssh_file.write(primetime_metadata)
-                TempFiles.append(pssh_file.name)
-                pssh_file.close() # necessary on Windows
-                args += ['--pssh', PRIMETIME_PSSH_SYSTEM_ID+':'+pssh_file.name]
+            # if options.primetime_metadata:
+            #     primetime_metadata = ComputePrimetimeMetaData(options.primetime_metadata, default_kid)
+            #     pssh_file = tempfile.NamedTemporaryFile(dir = options.output_dir, delete=False)
+            #     pssh_file.write(primetime_metadata)
+            #     TempFiles.append(pssh_file.name)
+            #     pssh_file.close() # necessary on Windows
+            #     args += ['--pssh', PRIMETIME_PSSH_SYSTEM_ID+':'+pssh_file.name]
 
-            Mp4Encrypt(options, media_file, encrypted_file.name, *args)
-            media_source.filename = encrypted_file.name
+            # Mp4Encrypt(options, media_file, encrypted_file.name, *args)
+            # unencpath = path.join(options.output_dir, media_source.filename)
+            # encpath = path.join(options.output_dir, encrypted_file.name)
+            # os.remove()
+            # shutil.copyfile(encpath, unencpath)
+            # media_source.filename = encrypted_file.name
 
     # parse the media sources and select the audio and video tracks
     (audio_sets, video_sets, subtitles_sets, mp4_files) = SelectTracks(options, media_sources)
     subtitles_files = SelectSubtitlesFiles(options, media_sources)
-
     # store lists of all tracks by type
     audio_tracks     = sum(audio_sets.values(),     [])
     video_tracks     = sum(video_sets.values(),     [])
@@ -1668,24 +1741,24 @@ def main():
             track.key_info = track.parent.media_source.track_key_infos.get(track.id)
 
     # check that segments are consistent between tracks of the same adaptation set
-    for tracks in video_sets.values():
-        prev_track = None
-        for track in tracks:
-            if prev_track:
-                # compute the total duration, excluding the last segment, which may be somewhat mismatched
-                track_duration_truncated = reduce(operator.add, track.segment_scaled_durations[:-1], 0)
-                prev_track_duration_truncated = reduce(operator.add, prev_track.segment_scaled_durations[:-1], 0)
-                if track_duration_truncated != prev_track_duration_truncated:
-                    sys.stderr.write('WARNING: video duration mismatch between "'+str(track)+'" and "'+str(prev_track)+'"\n')
-            prev_track = track
+    #for tracks in video_sets.values():
+    #    prev_track = None
+    #    for track in tracks:
+    #        if prev_track:
+    #            # compute the total duration, excluding the last segment, which may be somewhat mismatched
+    #            track_duration_truncated = reduce(operator.add, track.segment_scaled_durations[:-1], 0)
+    #            prev_track_duration_truncated = reduce(operator.add, prev_track.segment_scaled_durations[:-1], 0)
+    #            if track_duration_truncated != prev_track_duration_truncated:
+    #                sys.stderr.write('WARNING: video duration mismatch between "'+str(track)+'" and "'+str(prev_track)+'"\n')
+    #        prev_track = track
 
     # check that the video segments match for all video tracks in the same adaptation set
-    for tracks in video_sets.values():
-        if len(tracks) > 1:
-            anchor = tracks[0]
-            for track in tracks[1:]:
-                if track.segment_scaled_durations[:-1] != anchor.segment_scaled_durations[:-1]:
-                    PrintErrorAndExit('ERROR: video tracks are not aligned ("'+str(track)+'" differs from '+str(anchor)+')')
+    #for tracks in video_sets.values():
+    #    if len(tracks) > 1:
+    #        anchor = tracks[0]
+    #        for track in tracks[1:]:
+    #            if track.segment_scaled_durations[:-1] != anchor.segment_scaled_durations[:-1]:
+    #                PrintErrorAndExit('ERROR: video tracks are not aligned ("'+str(track)+'" differs from '+str(anchor)+')')
 
     # check that the video segment durations are almost all equal
     if not options.use_segment_timeline:
@@ -1726,7 +1799,8 @@ def main():
                     if len(tracks) > 1:
                         track.representation_id += '-'+str(track.order_index)
                     if options.on_demand:
-                        track.parent.media_name = ONDEMAND_MEDIA_FILE_PATTERN % (options.media_prefix, track.representation_id)
+                        fileName = filenameForTrack(track)
+                        track.parent.media_name = fileName
                     else:
                         track.init_segment_name = NOSPLIT_INIT_FILE_PATTERN % (track.representation_id)
                 track.stream_id = adaptation_set_name[0]
@@ -1819,13 +1893,13 @@ def main():
             #                  init_segment           = path.join(out_dir, subtitles_track.init_segment_name),
             #                  media_segment          = path.join(out_dir, SEGMENT_PATTERN))
         else:
-            for mp4_file in mp4_files.values():
-                print 'Processing and Copying media file', GetMappedFileName(mp4_file.media_source.filename)
-                media_filename = path.join(options.output_dir, mp4_file.media_name)
-                if not options.force_output and path.exists(media_filename):
-                    PrintErrorAndExit('ERROR: file ' + media_filename + ' already exists')
+            # for mp4_file in mp4_files.values():
+            #     print 'Processing and Copying media file', GetMappedFileName(mp4_file.media_source.filename)
+            #     media_filename = path.join(options.output_dir, mp4_file.media_name)
+            #     if not options.force_output and path.exists(media_filename):
+            #         PrintErrorAndExit('ERROR: file ' + media_filename + ' already exists')
 
-                shutil.copyfile(mp4_file.media_source.filename, media_filename)
+            #     shutil.copyfile(mp4_file.media_source.filename, media_filename)
             if options.smooth or options.hippo:
                 for track in audio_tracks+video_tracks+subtitles_tracks:
                     Mp4Split(options,
@@ -1834,14 +1908,14 @@ def main():
                              init_only    = True,
                              init_segment = path.join(options.output_dir, track.init_segment_name))
 
-        if len(subtitles_files):
-            MakeNewDir(path.join(options.output_dir, 'subtitles'))
-            for subtitles_file in subtitles_files:
-                print 'Processing and Copying subtitles file', GetMappedFileName(subtitles_file.media_source.filename)
-                out_dir = path.join(options.output_dir, 'subtitles', subtitles_file.language)
-                MakeNewDir(out_dir)
-                media_filename = path.join(out_dir, subtitles_file.media_name)
-                shutil.copyfile(subtitles_file.media_source.filename, media_filename)
+        #if len(subtitles_files):
+        #    MakeNewDir(path.join(options.output_dir, 'subtitles'))
+        #    for subtitles_file in subtitles_files:
+        #        print 'Processing and Copying subtitles file', GetMappedFileName(subtitles_file.media_source.filename)
+                #out_dir = path.join(options.output_dir, 'subtitles', subtitles_file.language)
+                #MakeNewDir(out_dir)
+                #media_filename = path.join(out_dir, subtitles_file.media_name)
+                #shutil.copyfile(subtitles_file.media_source.filename, media_filename)
 
     # output the DASH MPD
     OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, subtitles_files)

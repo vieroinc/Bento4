@@ -387,7 +387,7 @@ class Mp4Track:
 
         self.codec_family = sample_desc['coding']
         if 'codecs_string' in sample_desc:
-            self.codec = sample_desc['codecs_string']
+            self.codec = sample_desc['codecs_string'].lower()
         else:
             self.codec = self.codec_family
 
@@ -674,6 +674,9 @@ class MediaSource:
         if 'type'     not in self.spec: self.spec['type']     = ''
         if 'track'    not in self.spec: self.spec['track']    = 0
         if 'language' not in self.spec: self.spec['language'] = ''
+        if 'group'    not in self.spec: self.spec['group']    = '0'
+        if 'role'     not in self.spec: self.spec['role']     = 'main'
+
 
         # check if we have an explicit format (default=mp4)
         if '+format' in self.spec:
