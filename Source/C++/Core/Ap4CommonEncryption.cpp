@@ -684,42 +684,6 @@ AP4_CencCbcSubSampleEncrypter::EncryptSampleData(AP4_DataBuffer& data_in,
 }
 
 /*----------------------------------------------------------------------
-|   AP4_CencTrackEncrypter
-+---------------------------------------------------------------------*/
-class AP4_CencTrackEncrypter : public AP4_Processor::TrackHandler {
-public:
-    // constructor
-    AP4_CencTrackEncrypter(AP4_CencVariant              variant,
-                           AP4_UI32                     default_is_protected,
-                           AP4_UI08                     default_per_sample_iv_size,
-                           const AP4_UI08*              default_kid,
-                           AP4_UI08                     default_constant_iv_size,
-                           const AP4_UI08*              default_constant_iv,
-                           AP4_UI08                     default_crypt_byte_block,
-                           AP4_UI08                     default_skip_byte_block,
-                           AP4_Array<AP4_SampleEntry*>& sample_entries,
-                           AP4_UI32                     format);
-
-    // methods
-    virtual AP4_Result ProcessTrack();
-    virtual AP4_Result ProcessSample(AP4_DataBuffer& data_in,
-                                     AP4_DataBuffer& data_out);
-
-private:
-    // members
-    AP4_CencVariant             m_Variant;
-    AP4_Array<AP4_SampleEntry*> m_SampleEntries;
-    AP4_UI32                    m_Format;
-    AP4_UI32                    m_DefaultIsProtected;
-    AP4_UI08                    m_DefaultPerSampleIvSize;
-    AP4_UI08                    m_DefaultKid[16];
-    AP4_UI08                    m_DefaultConstantIvSize;
-    AP4_UI08                    m_DefaultConstantIv[16];
-    AP4_UI08                    m_DefaultCryptByteBlock;
-    AP4_UI08                    m_DefaultSkipByteBlock;
-};
-
-/*----------------------------------------------------------------------
 |   AP4_CencTrackEncrypter::AP4_CencTrackEncrypter
 +---------------------------------------------------------------------*/
 AP4_CencTrackEncrypter::AP4_CencTrackEncrypter(
@@ -846,36 +810,6 @@ AP4_CencTrackEncrypter::ProcessSample(AP4_DataBuffer& data_in,
 {
     return data_out.SetData(data_in.GetData(), data_in.GetDataSize());
 }
-
-/*----------------------------------------------------------------------
-|   AP4_CencFragmentEncrypter
-+---------------------------------------------------------------------*/
-class AP4_CencFragmentEncrypter : public AP4_Processor::FragmentHandler {
-public:
-    // constructor
-    AP4_CencFragmentEncrypter(AP4_CencVariant                         variant,
-                              AP4_ContainerAtom*                      traf,
-                              AP4_CencEncryptingProcessor::Encrypter* encrypter,
-                              AP4_UI32                                cleartext_sample_description_index);
-
-    // methods
-    virtual AP4_Result ProcessFragment();
-    virtual AP4_Result ProcessSample(AP4_DataBuffer& data_in,
-                                     AP4_DataBuffer& data_out);
-    virtual AP4_Result PrepareForSamples(AP4_FragmentSampleTable* sample_table);
-    virtual AP4_Result FinishFragment();
-    
-private:
-    // members
-    AP4_CencVariant                         m_Variant;
-    AP4_ContainerAtom*                      m_Traf;
-    AP4_CencSampleEncryption*               m_SampleEncryptionAtom;
-    AP4_CencSampleEncryption*               m_SampleEncryptionAtomShadow;
-    AP4_SaizAtom*                           m_Saiz;
-    AP4_SaioAtom*                           m_Saio;
-    AP4_CencEncryptingProcessor::Encrypter* m_Encrypter;
-    AP4_UI32                                m_CleartextSampleDescriptionIndex;
-};
 
 /*----------------------------------------------------------------------
 |   AP4_CencFragmentEncrypter::AP4_CencFragmentEncrypter
@@ -1053,7 +987,7 @@ AP4_CencFragmentEncrypter::PrepareForSamples(AP4_FragmentSampleTable* sample_tab
         if (AP4_FAILED(result)) return result;
         result = sample.ReadData(sample_data);
         if (AP4_FAILED(result)) return result;
-        bytes_of_cleartext_data.SetItemCount(0);
+        bytes_of_cleartext_data.SetItemCount(0);    
         bytes_of_encrypted_data.SetItemCount(0);
         result = m_Encrypter->m_SampleEncrypter->GetSubSampleMap(sample_data, 
                                                                  bytes_of_cleartext_data,
