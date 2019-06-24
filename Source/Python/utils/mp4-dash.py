@@ -786,6 +786,8 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
 
             fileName = filenameForTrack(audio_track)
             variantName = variantForName(fileName)
+            role = audio_track.role + ',' + audio_track.channel_layout
+            print(role)
             if options.on_demand or not options.split:
                 media_subdir        = ''
                 media_file_name     = fileName
@@ -797,9 +799,27 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
                 media_playlist_name = options.hls_media_playlist_name
                 media_playlist_path = media_subdir+'/'+media_playlist_name
 
-            master_playlist_file.write(('#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="%s",LANGUAGE="%s",NAME="%s",AUTOSELECT=YES,DEFAULT=YES,URI="%s"\r\n' % (
+            if audio_track.codec == 'ec-3':
+                # Dolby Digital Plus
+                (channels, codec_private_data) = ComputeDolbyDigitalSmoothStreamingInfo(audio_track)
+                audio_tag = '65534'
+                fourcc = 'EC-3'
+                channels = str(channels)
+                data_rate = int(audio_track.info['sample_descriptions'][0]['dolby_digital_info']['data_rate'])
+                packet_size = str(4*data_rate)
+            else:
+                # assume AAC
+                audio_tag = '255'
+                fourcc = 'AACL'
+                codec_private_data=audio_track.info['sample_descriptions'][0]['decoder_info']
+                channels = str(audio_track.channels)
+                packet_size = str(2*audio_track.channels)
+
+            master_playlist_file.write(('#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="%s",CHANNELS="%s",LANGUAGE="%s",CHARACTERISTICS="%s",NAME="%s",AUTOSELECT=YES,DEFAULT=YES,URI="%s"\r\n' % (
                                         audio_group_name,
+                                        channels,
                                         language,
+                                        role,
                                         language_name,
                                         media_playlist_path)).encode('utf-8'))
             OutputHlsTrack(options, audio_track, media_subdir, media_playlist_name, media_file_name)
@@ -1154,6 +1174,7 @@ def SelectTracks(options, media_sources):
         track_group    = media_source.spec['group']
         track_language = media_source.spec['language']
         track_role     = media_source.spec['role']
+        track_channel_layout = media_source.spec['channel_layout']
         tracks         = []
 
         if media_source.format != 'mp4':
@@ -1200,6 +1221,7 @@ def SelectTracks(options, media_sources):
                 language = options.language_map[language]
             track.language = language
             track.role = track_role
+            track.channel_layout = track_channel_layout
 
             # video scan type
             if track.type == 'video':
