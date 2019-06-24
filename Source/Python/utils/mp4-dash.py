@@ -463,12 +463,14 @@ def OutputDash(options, set_attributes, audio_sets, video_sets, subtitles_sets, 
             kwargs = {'mimeType': AUDIO_MIMETYPE, 'startWithSAP': '1', 'segmentAlignment': 'true'}
             language = audio_tracks[0].language
             role = audio_tracks[0].role
+            channel_layout = audio_tracks[0].channel_layout
             if (language != 'und') or options.always_output_lang:
                 kwargs['lang'] = language
             adaptation_set = xml.SubElement(*args, **kwargs)
 
-            print(role)
             xml.SubElement(adaptation_set, 'Role', schemeIdUri='urn:mpeg:dash:role:2011', value=role)
+            if channel_layout != '':
+                xml.SubElement(adaptation_set, 'Role', schemeIdUri='urn:mpeg:dash:role:2011', value=channel_layout)
 
             # see if we have descriptors
             AddDescriptor(adaptation_set, set_attributes, 'audio/' + language, 'audio')
@@ -820,7 +822,7 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
                                         channels,
                                         language,
                                         role,
-                                        language_name,
+                                        role,
                                         media_playlist_path)).encode('utf-8'))
             OutputHlsTrack(options, audio_track, media_subdir, media_playlist_name, media_file_name)
 
@@ -902,7 +904,7 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
                 media_playlist_name = options.hls_media_playlist_name
                 media_playlist_path = media_subdir+'/'+media_playlist_name
 
-            master_playlist_file.write('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="imsc1",NAME="{0:s}",DEFAULT=NO,AUTOSELECT=YES,LANGUAGE="{1:s}",URI="{2:s}"\r\n'
+            master_playlist_file.write('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="imsc1",NAME="{0:s}",DEFAULT=NO,LANGUAGE="{1:s}",URI="{2:s}"\r\n'
                                        .format(language_name, language, media_playlist_path))
 
     # WebVTT subtitles
