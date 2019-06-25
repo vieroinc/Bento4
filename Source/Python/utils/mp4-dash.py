@@ -904,16 +904,16 @@ def OutputHls(options, set_attributes, audio_sets, video_sets, subtitles_sets, s
                 media_playlist_name = options.hls_media_playlist_name
                 media_playlist_path = media_subdir+'/'+media_playlist_name
 
-            master_playlist_file.write('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="imsc1",NAME="{0:s}",DEFAULT=NO,LANGUAGE="{1:s}",URI="{2:s}"\r\n'
-                                       .format(language_name, language, media_playlist_path))
+            master_playlist_file.write('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="imsc1",NAME="{3:s}",DEFAULT=NO,LANGUAGE="{1:s}",URI="{2:s}"\r\n'
+                                       .format(language_name, language, media_playlist_path, subtitles_track.role))
 
     # WebVTT subtitles
     if len(subtitles_files):
         master_playlist_file.write('\r\n# Subtitles (WebVTT)\r\n')
         for subtitles_file in subtitles_files:
             fileName = subtitles_file.media_name.split(".vtt")[0] + ".m3u8"
-            master_playlist_file.write('''#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="{0:s}",DEFAULT=YES,AUTOSELECT=YES,FORCED={2:s},LANGUAGE="{0:s}",URI="{1:s}"\r\n'''.format(
-                subtitles_file.language, fileName, "YES" if subtitles_file.role == "forced" else "NO" ))
+            master_playlist_file.write('''#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs{4:s}",NAME="{3:s}",DEFAULT=NO,FORCED={2:s},LANGUAGE="{0:s}",URI="{1:s}"\r\n'''.format(
+                subtitles_file.language, fileName, "YES" if subtitles_file.role == "forced" else "NO", subtitles_file.role, "_forced" if subtitles_file.role == "forced" else ""))
 
 #############################################
 def OutputSmooth(options, audio_tracks, video_tracks):
