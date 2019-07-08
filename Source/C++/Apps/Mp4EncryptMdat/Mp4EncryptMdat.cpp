@@ -29,11 +29,13 @@
 /*----------------------------------------------------------------------
 |   includes
 +---------------------------------------------------------------------*/
+
 #include <math.h>
+
 #include <fcntl.h>
 #include <pthread.h>
-#include <semaphore.h>
 #include <queue>
+#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/signal.h>
@@ -261,8 +263,8 @@ public:
     
     int ReadData(AP4_UI08 * buffer, int required) {
         int toRead = required;
-        ssize_t rc;
-        while (toRead > 0 && (rc = read(m_CL, buffer + (required - toRead), toRead)) > 0) {
+        ssize_t rc = 0;
+        while (toRead > 0 && (rc = read(m_CL, buffer + (required - toRead), toRead)) >= 0) {
             toRead -= rc;
         }
         if (rc < 0) {
@@ -292,6 +294,7 @@ public:
         AP4_MemoryByteStream * stream = new AP4_MemoryByteStream(data, size);
         if (data) {
             free(data);
+            data = NULL;
         }
         return stream;
     }
@@ -949,6 +952,8 @@ void handler(int s) {
 int
 main(int argc, char** argv)
 {
+    signal(SIGPIPE, SIG_IGN);
+
     ThreadPool *tp = new ThreadPool(4);
     sockaddr_un addr;
     int fd,cl;
