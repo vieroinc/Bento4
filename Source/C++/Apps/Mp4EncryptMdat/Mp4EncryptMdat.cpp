@@ -209,7 +209,7 @@ static pthread_mutex_t mutex_InputStream;
 static sem_t *sema_full;
 // static sem_t *sema_empty;
 
-// static const AP4_UI32 OPTION_EME_PSSH           = 0x01; ///< Include a 'standard EME' pssh atom in the output
+// static const AP4_UI32 OPTION_EME_PSSH           = 0x01; ///< Include a 'standard EME' pssh atom in the ouut
 static const AP4_UI32 OPTION_PIFF_COMPATIBILITY = 0x02; ///< Attempt to create an output that is compatible with the PIFF format
 static const AP4_UI32 OPTION_PIFF_IV_SIZE_16    = 0x04; ///< With the PIFF-compatibiity option, use an IV of size 16 when possible (instead of 8)
 static const AP4_UI32 OPTION_IV_SIZE_8          = 0x08; ///< Use an IV of size 8 when possible (instead of 16 by default).
@@ -264,10 +264,10 @@ public:
     int ReadData(AP4_UI08 * buffer, int required) {
         int toRead = required;
         ssize_t rc = 0;
-        while (toRead > 0 && (rc = read(m_CL, buffer + (required - toRead), toRead)) >= 0) {
+        while (toRead > 0 && (rc = recv(m_CL, buffer + (required - toRead), toRead, MSG_WAITALL)) > 0) {
             toRead -= rc;
         }
-        if (rc < 0) {
+        if (rc <= 0) {
             return (int)rc;
         }
         return 0;
@@ -883,7 +883,7 @@ void EncodeTask::run() {
     ssize_t rc;
     
     int toRead = 4;
-    while (toRead > 0 && (rc = read(_cl, buf + 4 - toRead, toRead)) > 0) {
+    while (toRead > 0 && (rc = recv(_cl, buf + 4 - toRead, toRead, MSG_WAITALL)) > 0) {
         toRead -= rc;
     }
     if (rc == -1 || rc == 0) {
@@ -898,7 +898,7 @@ void EncodeTask::run() {
     }
     char variant[5]; variant[4] = 0;
     toRead = 4;
-    while (toRead > 0 && (rc = read(_cl, variant + 4 - toRead, toRead)) > 0) {
+    while (toRead > 0 && (rc = recv(_cl, variant + 4 - toRead, toRead, MSG_WAITALL)) > 0) {
         toRead -= rc;
     }
     if (rc == -1 || rc == 0) {
@@ -911,7 +911,7 @@ void EncodeTask::run() {
     AP4_UI08 key_bin[16];
     AP4_UI08 iv_bin[16];
     toRead = 16;
-    while (toRead > 0 && (rc = read(_cl, key_bin + 16 - toRead, toRead)) > 0) {
+    while (toRead > 0 && (rc = recv(_cl, key_bin + 16 - toRead, toRead, MSG_WAITALL)) > 0) {
         toRead -= rc;
     }
     if (rc == -1 || rc == 0) {
@@ -921,7 +921,7 @@ void EncodeTask::run() {
         return;
     }
     toRead = 16;
-    while (toRead > 0 && (rc = read(_cl, iv_bin + 16 - toRead, toRead)) > 0) {
+    while (toRead > 0 && (rc = recv(_cl, iv_bin + 16 - toRead, toRead, MSG_WAITALL)) > 0) {
         toRead -= rc;
     }
     if (rc == -1 || rc == 0) {
